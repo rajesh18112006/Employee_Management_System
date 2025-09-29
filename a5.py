@@ -3,11 +3,14 @@ from tkinter import ttk, messagebox
 import pymysql
 from tkcalendar import DateEntry  
 from datetime import datetime
+import a2
+
 
 class SalaryManagementApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Salary Management")
+        self.root.state("zoomed")
 
         self.create_widgets()
         self.root.configure(bg='#34495e')
@@ -28,12 +31,6 @@ class SalaryManagementApp:
         
         self.employee_name_entry = tk.Entry(self.root, font=('Helvetica', 12))
         self.employee_name_entry.grid(row=1, column=1, padx=10, pady=10)
-
-        self.button_delete = tk.Button(self.root, text="Delete Record", command=self.delete_record, font=('Helvetica', 12, 'bold'), bg='#FF5733', fg='white')
-        self.button_delete.grid(row=9, column=1, padx=10, pady=10)
-
-        self.button_delete = tk.Button(self.root, text="Back", command=self.back_it, font=('Helvetica', 12, 'bold'), bg='brown', fg='white')
-        self.button_delete.grid(row=9, column=2, padx=10, pady=10)
 
         self.monthly_present_days_label = tk.Label(self.root, text="Monthly Present Days:", font=('Helvetica', 12))
         self.monthly_present_days_label.grid(row=2, column=0, padx=10, pady=10)
@@ -78,12 +75,20 @@ class SalaryManagementApp:
         self.issue_date_entry = DateEntry(self.root, font=('Helvetica', 12), date_pattern='yyyy-mm-dd')
         self.issue_date_entry.grid(row=8, column=1, padx=10, pady=10)
 
+        # Buttons
         self.button_fetch = tk.Button(self.root, text="Fetch Details", command=self.fetch_employee_details, font=('Helvetica', 12))
         self.button_fetch.grid(row=0, column=2, padx=10, pady=10)
 
         self.button_calculate = tk.Button(self.root, text="Calculate Salary", command=self.calculate_salary, font=('Helvetica', 12, 'bold'), bg='#4CAF50', fg='white')
-        self.button_calculate.grid(row=9, column=0, columnspan=2, padx=10, pady=10)
+        self.button_calculate.grid(row=9, column=0, columnspan=1, padx=10, pady=10)
 
+        self.button_delete = tk.Button(self.root, text="Delete Record", command=self.delete_record, font=('Helvetica', 12, 'bold'), bg='#FF5733', fg='white')
+        self.button_delete.grid(row=9, column=1, padx=10, pady=10)
+
+        self.button_back = tk.Button(self.root, text="Back", command=self.back_it, font=('Helvetica', 12, 'bold'), bg='brown', fg='white')
+        self.button_back.grid(row=9, column=2, padx=10, pady=10)
+
+        # Treeview
         self.tree = ttk.Treeview(self.root, columns=("Employee ID", "Employee Name", "Basic Pay (Monthly)", "Reduction", "Total Salary", "Issue Date"), show="headings")
         self.tree.heading("Employee ID", text="Employee ID")
         self.tree.heading("Employee Name", text="Employee Name")
@@ -137,51 +142,94 @@ class SalaryManagementApp:
             basic_pay_monthly = float(self.basic_pay_entry.get())
             oneday = basic_pay_monthly / 30
 
-            try:
-                self.cr.execute("SELECT COUNT(*) FROM attendance WHERE EmployeeId=%s", (employee_id,))
-                count = self.cr.fetchone()[0]
+            # Validation
+            self.cr.execute("SELECT COUNT(*) FROM attendance WHERE EmployeeId=%s", (employee_id,))
+            count = self.cr.fetchone()[0]
 
-                if count == 0:
-                    messagebox.showerror("Error", f"There is no Employee with the employee ID of {employee_id} ")
-                    self.clear_data()
-                    return
-                
-                query_name = "SELECT employeename FROM employeedetails WHERE employeeid = %s"
-                self.cr.execute(query_name, (employee_id,))
-                actual_name = self.cr.fetchone()[0]
-                
-                if employee_name != actual_name:
-                    messagebox.showerror("Error", f"Employee name {employee_name} does not match the name in employeedetails.")
-                    return
-            except pymysql.Error as e:
-                messagebox.showerror("Database Error", f"Error adding record: {e}")
+            if count == 0:
+                messagebox.showerror("Error", f"There is no Employee with the employee ID of {employee_id}")
+                self.clear_data()
+                return
+            
+            query_name = "SELECT employeename FROM employeedetails WHERE employeeid = %s"
+            self.cr.execute(query_name, (employee_id,))
+            actual_name = self.cr.fetchone()[0]
+            
+            if employee_name != actual_name:
+                messagebox.showerror("Error", f"Employee name {employee_name} does not match the name in employeedetails.")
+                return
 
-            try:       
-                salary_amount = basic_pay_monthly
-                overtime_pay = round(overtime_hours * (oneday / 8))
-                reduction_amount = leave_days * oneday
-                total_salary = salary_amount - reduction_amount + overtime_pay
+            # Salary calculation
+            salary_amount = basic_pay_monthly
+            overtime_pay = round(overtime_hours * (oneday / 8))
+            reduction_amount = leave_days * oneday
+            total_salary = salary_amount - reduction_amount + overtime_pay
 
-                self.cr.execute("SELECT * FROM salary WHERE employeeid = %s", (employee_id,))
-                if self.cr.fetchone() is None:
-                    issue_date = self.issue_date_entry.get()
-                    self.cr.execute("INSERT INTO salary (employeeid, employeename, basicpay, reduction, totalsalary, issuedate) "
-                                    "VALUES (%s, %s, %s, %s, %s, %s)", 
-                                    (employee_id, employee_name, basic_pay_monthly, reduction_amount, total_salary, issue_date))
-                    self.con.commit()
-                    messagebox.showinfo("Success", "Salary details added successfully.")
-                else:
-                    messagebox.showinfo("Success", "Employee salary already calculated.")
-            except pymysql.Error as e:
-                messagebox.showerror("Error", f"Error calculating salary: {e}")
+            # ✅ Show values in the Entry fields
+            self.reduction_entry.delete(0, tk.END)
+            self.reduction_entry.insert(0, f"{reduction_amount:.2f}")
+            self.total_salary_entry.delete(0, tk.END)
+            self.total_salary_entry.insert(0, f"{total_salary:.2f}")
+
+            self.cr.execute("SELECT * FROM salary WHERE employeeid = %s", (employee_id,))
+            if self.cr.fetchone() is None:
+                issue_date = self.issue_date_entry.get()
+                self.cr.execute("INSERT INTO salary (employeeid, employeename, basicpay, reduction, totalsalary, issuedate) "
+                                "VALUES (%s, %s, %s, %s, %s, %s)", 
+                                (employee_id, employee_name, basic_pay_monthly, reduction_amount, total_salary, issue_date))
+                self.con.commit()
+                messagebox.showinfo("Success", "Salary details added successfully.")
+            else:
+                messagebox.showinfo("Success", "Employee salary already calculated.")
+            self.connectall()
         except ValueError:
             messagebox.showerror("Input Error", "Please enter valid numerical values.")
+        except pymysql.Error as e:
+            messagebox.showerror("Database Error", f"Error calculating salary: {e}")
 
     def back_it(self):
-        self.root.quit()
+        self.root.destroy()
+        a2.Navpage()
         
     def delete_record(self):
-        pass
+        """Delete salary record by selecting from Treeview"""
+        selected_item = self.tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a record to delete.")
+            return
+
+        # Get Employee ID from selected row
+        values = self.tree.item(selected_item, "values")
+        employee_id = values[0]  # first column
+
+        try:
+            self.cr.execute("SELECT * FROM salary WHERE employeeid = %s", (employee_id,))
+            record = self.cr.fetchone()
+            
+            if record is None:
+                messagebox.showerror("Error", f"No salary record found for Employee ID {employee_id}.")
+                return
+            
+            confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete salary record for Employee ID {employee_id}?")
+            if confirm:
+                self.cr.execute("DELETE FROM salary WHERE employeeid = %s", (employee_id,))
+                self.con.commit()
+                messagebox.showinfo("Success", f"Salary record for Employee ID {employee_id} deleted successfully.")
+                
+                self.connectall()
+                self.clear_data()
+        except pymysql.Error as e:
+            messagebox.showerror("Database Error", f"Error deleting record: {e}")
+
+    def clear_data(self):
+        self.employee_id_entry.delete(0, tk.END)
+        self.employee_name_entry.delete(0, tk.END)
+        self.monthly_present_days_entry.delete(0, tk.END)
+        self.leave_days_entry.delete(0, tk.END)
+        self.overtime_hours_entry.delete(0, tk.END)
+        self.basic_pay_entry.delete(0, tk.END)
+        self.reduction_entry.delete(0, tk.END)
+        self.total_salary_entry.delete(0, tk.END)
 
 
 if __name__ == "__main__":
